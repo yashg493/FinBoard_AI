@@ -1,4 +1,4 @@
-# Boardroom AI 🏛
+# FinBoardAI 🏛
 
 **Autonomous Multi-Agent Financial Governance System**
 
