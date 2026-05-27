@@ -1,4 +1,4 @@
-# Boardroom AI 🏛
+# FinBoard_AI 🏛
 
 **Autonomous Multi-Agent Financial Governance System**
 
@@ -81,7 +81,7 @@ npm run dev   # http://localhost:3000
 ## Project Structure
 
 ```
-boardroom-ai/
+finBoard-ai/
 ├── backend/
 │   ├── main.py                    # FastAPI + WebSocket server
 │   ├── agents/
