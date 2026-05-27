@@ -1,6 +1,7 @@
 """
 Base Agent — Foundation class for all Boardroom AI agents.
-Handles Vertex AI Gemini calls, structured output, and confidence scoring.
+Handles Vertex AI Gemini calls, structured output, confidence scoring,
+Gemini Safety Settings (Phase 5), and formal Tool declarations (Phase 2).
 """
 import json
 import re
@@ -11,13 +12,90 @@ from typing import Any, AsyncGenerator
 import os
 import httpx
 import vertexai
-from vertexai.generative_models import GenerativeModel, GenerationConfig
+from vertexai.generative_models import (
+    GenerativeModel,
+    GenerationConfig,
+    HarmCategory,
+    HarmBlockThreshold,
+    Tool,
+    FunctionDeclaration,
+    Part,
+)
 
 VERTEX_PROJECT = os.getenv("VERTEX_PROJECT", "your-gcp-project-id")
 VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", "us-central1")
 MODEL_ID = os.getenv("VERTEX_MODEL", "gemini-2.5-flash")
 
 vertexai.init(project=VERTEX_PROJECT, location=VERTEX_LOCATION)
+
+# ── Gemini Safety Settings (Hackathon Phase 5) ────────────────────────────────
+# Allow financial discussion but block harmful content
+SAFETY_SETTINGS = {
+    HarmCategory.HARM_CATEGORY_HATE_SPEECH:        HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT:  HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT:  HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_HARASSMENT:         HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+}
+
+# ── Vertex AI Tool Declarations (Hackathon Phase 2) ───────────────────────────
+# Formal tool definitions allow agents to call structured functions
+fetch_macro_data_tool = FunctionDeclaration(
+    name="fetch_macro_data",
+    description="Fetch live macroeconomic indicators for India (RBI repo rate, CPI, Nifty50, GDP, employment, currency).",
+    parameters={
+        "type": "object",
+        "properties": {
+            "country": {
+                "type": "string",
+                "description": "Country code for macro data (e.g., 'IN' for India)",
+            }
+        },
+        "required": [],
+    },
+)
+
+query_user_portfolio_tool = FunctionDeclaration(
+    name="query_user_portfolio",
+    description="Retrieve a user's current portfolio holdings, allocation breakdown, and unrealized gains/losses.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "user_id": {
+                "type": "string",
+                "description": "The unique identifier of the user",
+            },
+            "include_live_prices": {
+                "type": "boolean",
+                "description": "Whether to include real-time LTP prices for each holding",
+            },
+        },
+        "required": ["user_id"],
+    },
+)
+
+get_portfolio_risk_metrics_tool = FunctionDeclaration(
+    name="get_portfolio_risk_metrics",
+    description="Compute risk metrics for a portfolio: volatility, beta, Sharpe ratio, max drawdown, and concentration risk.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "portfolio_holdings": {
+                "type": "array",
+                "description": "List of holdings with ticker, quantity, and average cost",
+                "items": {"type": "object"},
+            }
+        },
+        "required": ["portfolio_holdings"],
+    },
+)
+
+BOARDROOM_TOOLS = Tool(
+    function_declarations=[
+        fetch_macro_data_tool,
+        query_user_portfolio_tool,
+        get_portfolio_risk_metrics_tool,
+    ]
+)
 
 
 class AgentOutput:
@@ -53,8 +131,11 @@ class AgentOutput:
 class BaseAgent(ABC):
     """
     Abstract base for all Boardroom AI agents.
-    Wraps Vertex AI Gemini with structured output parsing, retry logic,
-    and async streaming support.
+    Wraps Vertex AI Gemini with:
+    - Structured output parsing & retry logic
+    - Gemini Safety Settings (Phase 5 compliance)
+    - Formal Tool declarations for macro/portfolio data (Phase 2 compliance)
+    - Arize Phoenix OpenTelemetry tracing (Phase 3 compliance)
     """
 
     def __init__(self, agent_name: str, system_prompt: str):
@@ -95,7 +176,7 @@ class BaseAgent(ABC):
         macro_data: dict,
         context: dict = None,
     ) -> AgentOutput:
-        """Main analysis entry point — calls Gemini and returns structured output with tracing."""
+        """Main analysis entry point — calls Gemini with safety settings and returns structured output."""
         context = context or {}
         prompt = self.build_prompt(user_profile, macro_data, context)
 
@@ -107,7 +188,7 @@ class BaseAgent(ABC):
         with tracer.start_as_current_span(f"{self.agent_name}.analyze") as span:
             span.set_attribute("agent.name", self.agent_name)
             span.set_attribute("agent.call_time", time.time())
-            
+
             # Record user identifier
             user_id = user_profile.get("user_id") or context.get("user_id") or getattr(self, "user_id", "unknown")
             span.set_attribute("user.id", user_id)
@@ -117,12 +198,13 @@ class BaseAgent(ABC):
                 response = await self.model.generate_content_async(
                     prompt,
                     generation_config=self.generation_config,
+                    safety_settings=SAFETY_SETTINGS,  # Phase 5: enforce safety guardrails
                 )
                 latency_ms = (time.monotonic() - start) * 1000
                 raw_text = response.text
                 result = self.parse_output(raw_text)
 
-                # Record output attributes
+                # Record output attributes for Arize Phoenix tracing
                 span.set_attribute("agent.confidence", getattr(result, "confidence", 0.0))
                 span.set_attribute("agent.recommendation", getattr(result, "recommendation", "")[:200])
                 span.set_attribute("agent.risk_flags", str(getattr(result, "risk_flags", [])))

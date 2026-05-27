@@ -34,6 +34,7 @@ class MongoMemory:
         await self.db.board_meetings.create_index([("user_id", 1), ("timestamp", DESCENDING)])
         await self.db.users.create_index("user_id", unique=True)
         await self.db.macro_events.create_index([("timestamp", DESCENDING)])
+        await self.db.broker_connections.create_index("user_id", unique=True)
 
     async def close(self):
         if self.client:
@@ -149,7 +150,39 @@ class MongoMemory:
         ).sort("snapshot_at", DESCENDING).limit(limit)
         return await cursor.to_list(length=limit)
 
+    # ── Broker Connections ──
+
+    async def save_broker_connection(self, user_id: str, broker_id: str, token_data: dict) -> None:
+        """
+        Store broker credentials for a user.
+        Each user document has a 'brokers' dict keyed by broker_id.
+        Token data is stored as-is; in production this should be encrypted
+        using GCP Secret Manager or a KMS key.
+        """
+        token_data["saved_at"] = datetime.utcnow().isoformat()
+        await self.db.broker_connections.update_one(
+            {"user_id": user_id},
+            {"$set": {f"brokers.{broker_id}": token_data, "user_id": user_id}},
+            upsert=True,
+        )
+
+    async def get_broker_connections(self, user_id: str) -> dict:
+        """
+        Get all broker token_data dicts for this user.
+        Returns: { broker_id: token_data_dict }
+        """
+        doc = await self.db.broker_connections.find_one({"user_id": user_id}, {"_id": 0})
+        if doc:
+            return doc.get("brokers", {})
+        return {}
+
+    async def remove_broker_connection(self, user_id: str, broker_id: str) -> None:
+        """Remove a specific broker's credentials."""
+        await self.db.broker_connections.update_one(
+            {"user_id": user_id},
+            {"$unset": {f"brokers.{broker_id}": ""}},
+        )
+
 
 # Shared global database connection instance
 db = MongoMemory()
-

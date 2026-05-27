@@ -9,6 +9,7 @@ const AGENT_COLORS: Record<string, string> = {
   "Orchestrator": "text-amber-400 border-amber-800",
   "Board": "text-gray-400 border-gray-700",
   "System": "text-gray-500 border-gray-800",
+  "You": "text-cyan-400 border-cyan-800",
 };
 
 const AGENT_ICONS: Record<string, string> = {
@@ -18,6 +19,7 @@ const AGENT_ICONS: Record<string, string> = {
   "Tax Agent": "📊",
   "Orchestrator": "⚖",
   "Board": "🏛",
+  "You": "💬",
 };
 
 export default function BoardEvent({ event }: { event: BoardEventData }) {
@@ -27,6 +29,9 @@ export default function BoardEvent({ event }: { event: BoardEventData }) {
   const isConsensus = event.type === "consensus";
   const isDebate = event.debate;
   const isPhase = event.type === "phase_start" || event.type === "debate_start";
+  const isUserMsg = event.type === "user_input";
+  const isUserResponse = event.type === "user_response";
+  const isConstraint = event.type === "constraint_acknowledged";
 
   if (isPhase) {
     return (
@@ -34,6 +39,63 @@ export default function BoardEvent({ event }: { event: BoardEventData }) {
         <span className="text-xs text-gray-600 border border-gray-800 px-3 py-1 rounded-full">
           {event.message}
         </span>
+      </div>
+    );
+  }
+
+  // User's own message bubble (right-aligned)
+  if (isUserMsg) {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-sm bg-cyan-900/30 border border-cyan-800/50 rounded-xl rounded-br-sm px-4 py-2.5">
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className="text-xs text-cyan-500 font-medium">You</span>
+            <span className="text-xs text-gray-600">💬</span>
+          </div>
+          <p className="text-sm text-cyan-100 leading-relaxed">{event.message}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Constraint acknowledged
+  if (isConstraint) {
+    return (
+      <div className="flex items-center gap-2 py-1">
+        <span className="text-xs text-blue-400 border border-blue-800 px-3 py-1 rounded-full bg-blue-950/20">
+          📌 {event.message}
+        </span>
+      </div>
+    );
+  }
+
+  // Board response to user question
+  if (isUserResponse) {
+    const keyInsight = event.data?.key_insight as string | undefined;
+    const recommendedAction = event.data?.recommended_action as string | undefined;
+    return (
+      <div className="border border-cyan-800/40 bg-cyan-950/20 rounded-lg p-4 ml-4">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-cyan-400 text-xs font-semibold">⚖ Board Response</span>
+          {event.data?.confidence && (
+            <span className="text-xs text-gray-600">
+              {(Number(event.data.confidence) * 100).toFixed(0)}% confidence
+            </span>
+          )}
+        </div>
+        <p className="text-sm text-cyan-100 leading-relaxed mb-2">{event.message}</p>
+        {keyInsight && (
+          <div className="mt-2 pt-2 border-t border-cyan-800/30">
+            <p className="text-xs text-cyan-700 uppercase tracking-wider mb-1">Key Insight</p>
+            <p className="text-xs text-cyan-300">{keyInsight}</p>
+          </div>
+        )}
+        {recommendedAction && (
+          <div className="mt-2 pt-2 border-t border-cyan-800/30">
+            <p className="text-xs text-cyan-700 uppercase tracking-wider mb-1">Recommended Action</p>
+            <p className="text-xs text-cyan-200 font-medium">{recommendedAction}</p>
+          </div>
+        )}
       </div>
     );
   }

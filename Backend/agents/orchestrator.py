@@ -138,9 +138,19 @@ Synthesize these into a unified board decision in EXACT JSON format:
         """
         Full board meeting flow: Sentinel → Parallel Agents → Debate Loop → Consensus.
         Yields streaming events for the frontend live UI.
+        User constraints (stated goals, constraints) are injected into the context
+        so all agents are aware of them during analysis.
         """
         context = context or {}
         meeting_id = f"meeting_{int(time.time())}"
+
+        # Enrich user_profile with any live portfolio data passed in context
+        if context.get("live_portfolio"):
+            user_profile = {**user_profile, "portfolio": context["live_portfolio"]}
+
+        # Attach user-stated constraints to profile for agent awareness
+        if context.get("user_constraints"):
+            user_profile = {**user_profile, "user_stated_constraints": context["user_constraints"]}
 
         from utils.observability import trace_board_meeting
 
@@ -221,6 +231,71 @@ Synthesize these into a unified board decision in EXACT JSON format:
             })
 
             yield self._event("meeting_saved", "System", f"Board meeting {meeting_id} saved to memory.")
+
+    async def handle_user_question(
+        self,
+        user_profile: dict,
+        macro_data: dict,
+        question: str,
+        meeting_context: dict = None,
+    ) -> AsyncGenerator[dict, None]:
+        """
+        Respond to a user question mid-meeting.
+        The Orchestrator synthesizes a focused board response without re-running all agents.
+        Streams events back to the frontend as a live board reply.
+        """
+        meeting_context = meeting_context or {}
+
+        yield self._event("agent_thinking", "Orchestrator", "Board is considering your question...")
+
+        # Build a focused Q&A prompt
+        qa_prompt = f"""
+        A board member (the user) has asked the following question mid-meeting:
+
+        USER QUESTION: "{question}"
+
+        USER FINANCIAL PROFILE SUMMARY:
+        - Monthly Income: {user_profile.get('monthly_income', 'N/A')}
+        - Portfolio Value: {user_profile.get('portfolio', {}).get('total_value', 'N/A')}
+        - Risk Tolerance: {user_profile.get('risk_tolerance', 'moderate')}
+        - Investment Horizon: {user_profile.get('investment_horizon_years', 'N/A')} years
+        - User Constraints: {user_profile.get('user_stated_constraints', [])}
+
+        CURRENT MACRO CONTEXT:
+        - Nifty 50: {macro_data.get('markets', {}).get('nifty50', 'N/A')}
+        - RBI Repo Rate: {macro_data.get('interest_rates', {}).get('rbi_repo_rate', 'N/A')}%
+        - CPI Inflation: {macro_data.get('inflation', {}).get('cpi_yoy', 'N/A')}%
+
+        RECENT MEETING CONTEXT: {meeting_context.get('recent_consensus', 'No prior consensus this session')}
+
+        As the Board Chairperson, provide a direct, actionable board response to the user's question.
+        Return valid JSON in EXACTLY this format:
+        {{
+          "board_response": "<2-4 sentence direct answer to the user's specific question>",
+          "responding_agents": ["<list of agents most relevant to this question>"],
+          "key_insight": "<the single most important insight for the user>",
+          "recommended_action": "<one specific action the user should take based on this question>",
+          "confidence": <0.0-1.0>
+        }}
+        """
+
+        try:
+            from agents.base_agent import SAFETY_SETTINGS
+            response = await self.model.generate_content_async(
+                qa_prompt,
+                generation_config=self.generation_config,
+                safety_settings=SAFETY_SETTINGS,
+            )
+            data = self._safe_parse_json(response.text)
+
+            yield self._event(
+                "user_response",
+                "Orchestrator",
+                data.get("board_response", "The board has reviewed your question."),
+                data={"key_insight": data.get("key_insight"), "recommended_action": data.get("recommended_action"), "confidence": data.get("confidence", 0.8), "responding_agents": data.get("responding_agents", [])},
+            )
+        except Exception as e:
+            yield self._event("user_response", "Orchestrator", f"Board response error: {str(e)}")
 
     async def run_simulation(
         self,
