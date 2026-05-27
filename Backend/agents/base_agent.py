@@ -15,7 +15,7 @@ from vertexai.generative_models import GenerativeModel, GenerationConfig
 
 VERTEX_PROJECT = os.getenv("VERTEX_PROJECT", "your-gcp-project-id")
 VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", "us-central1")
-MODEL_ID = os.getenv("VERTEX_MODEL", "gemini-1.5-pro")
+MODEL_ID = os.getenv("VERTEX_MODEL", "gemini-2.5-flash")
 
 vertexai.init(project=VERTEX_PROJECT, location=VERTEX_LOCATION)
 
@@ -59,17 +59,25 @@ class BaseAgent(ABC):
 
     def __init__(self, agent_name: str, system_prompt: str):
         self.agent_name = agent_name
-        self.system_prompt = system_prompt
+        json_safety_instruction = (
+            "\n\nCRITICAL: You must return valid JSON only matching the schema exactly. "
+            "Never use unescaped double quotes inside your JSON string values (for example, "
+            "do not write \"portfolio allocation\" inside a string; use single quotes like "
+            "'portfolio allocation' instead). Verify that the JSON is fully compliant and that "
+            "all brackets and parentheses are correctly closed."
+        )
+        self.system_prompt = system_prompt + json_safety_instruction
         self.model = GenerativeModel(
             MODEL_ID,
-            system_instruction=system_prompt,
+            system_instruction=self.system_prompt,
         )
-        self.generation_config = GenerationConfig(
-            temperature=0.3,
-            top_p=0.9,
-            max_output_tokens=2048,
-            response_mime_type="application/json",
-        )
+        self.generation_config = {
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_output_tokens": 4096,
+            "response_mime_type": "application/json",
+            "thinking_config": {"thinking_budget": 0},
+        }
 
     @abstractmethod
     def build_prompt(self, user_profile: dict, macro_data: dict, context: dict) -> str:
@@ -141,14 +149,29 @@ class BaseAgent(ABC):
         # Remove markdown code fences if present
         text = re.sub(r"```(?:json)?\s*", "", text)
         text = text.replace("```", "")
+
+        # Clean up common JSON syntax issues like trailing commas before closing braces/brackets
+        text = re.sub(r',\s*\}', '}', text)
+        text = re.sub(r',\s*\]', ']', text)
+
         try:
             return json.loads(text)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as jde:
+            import logging
+            db_logger = logging.getLogger("boardroom-ai")
+            db_logger.error(f"[DEBUG_JSON_FAIL] Text length: {len(text)}. Exception: {str(jde)}")
+            db_logger.error(f"[DEBUG_JSON_FAIL] Full text:\n{text}\n[DEBUG_JSON_FAIL_END]")
             # Try to find JSON object within the text
             match = re.search(r"\{[\s\S]*\}", text)
             if match:
-                return json.loads(match.group())
-            raise ValueError(f"Could not parse JSON from: {text[:200]}")
+                try:
+                    cleaned_match = match.group()
+                    cleaned_match = re.sub(r',\s*\}', '}', cleaned_match)
+                    cleaned_match = re.sub(r',\s*\]', ']', cleaned_match)
+                    return json.loads(cleaned_match)
+                except json.JSONDecodeError as jde_inner:
+                    raise ValueError(f"Inner JSON parsing failed: {str(jde_inner)}. Cleaned text: {cleaned_match[:500]}")
+            raise ValueError(f"JSON parsing failed: {str(jde)}. Raw text: {text[:500]}")
 
     def _clamp_confidence(self, value: Any) -> float:
         try:

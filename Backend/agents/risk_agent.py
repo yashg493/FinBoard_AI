@@ -59,7 +59,7 @@ USER RISK PROFILE:
 - EMI Details: {emis}
 - Employer Sector: {sector}
 - Portfolio Value: ₹{user_profile.get('portfolio', {}).get('total_value', 0):,}
-- Insurance Coverage: {user_profile.get('insurance', {{}})}
+- Insurance Coverage: {user_profile.get('insurance', {})}
 
 CONTEXT / TRIGGER: {context}
 
