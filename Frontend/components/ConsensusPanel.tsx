@@ -67,6 +67,11 @@ export default function ConsensusPanel({ event }: ConsensusPanelProps) {
   const govMode = String(data?.governance_mode ?? "ADVISORY");
   const disagreement = Number(data?.disagreement_score ?? 0);
   const nextReview = String(data?.next_review_trigger ?? "");
+  
+  const narrative = data?.narrative as string | undefined;
+  const debateSummary = data?.debate_summary as string | undefined;
+  const agentSummaries = data?.per_agent_summary as Record<string, string> | undefined;
+  const holdingRecs = data?.holding_level_recommendations as Array<{symbol: string; action: string; reasoning: string}> | undefined;
 
   const GOV_STYLE: Record<string, string> = {
     ADVISORY:   "text-blue-400 border-blue-800 bg-blue-950/30",
@@ -90,8 +95,34 @@ export default function ConsensusPanel({ event }: ConsensusPanelProps) {
       {/* Verdict */}
       <div className="border border-amber-800/50 bg-amber-950/20 rounded-lg p-3">
         <p className="text-xs text-amber-600 mb-1.5 uppercase tracking-wider">Board Verdict</p>
-        <p className="text-sm text-amber-100 leading-relaxed">{event.message}</p>
+        <p className="text-sm text-amber-100 leading-relaxed whitespace-pre-wrap">{event.message}</p>
+        {narrative && (
+          <div className="mt-3 pt-3 border-t border-amber-800/30">
+            <p className="text-xs text-amber-600 uppercase tracking-wider mb-1.5">Detailed Analysis</p>
+            <p className="text-sm text-amber-200/80 leading-relaxed whitespace-pre-wrap">{narrative}</p>
+          </div>
+        )}
       </div>
+
+      {/* Per Agent Summary */}
+      {agentSummaries && (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Agent Perspectives</p>
+          {Object.entries(agentSummaries).map(([agent, summary]) => (
+            <div key={agent} className="text-xs border-l-2 border-gray-600 pl-2">
+              <span className="font-semibold capitalize text-gray-300">{agent}:</span> <span className="text-gray-400">{summary}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Debate Summary */}
+      {debateSummary && (
+        <div className="border border-purple-800/40 bg-purple-950/20 rounded p-3">
+          <p className="text-xs text-purple-500 uppercase tracking-wider mb-1">Debate Summary</p>
+          <p className="text-xs text-purple-200/80 leading-relaxed">{debateSummary}</p>
+        </div>
+      )}
 
       {/* Disagreement Score */}
       {disagreement > 0 && (
@@ -118,7 +149,7 @@ export default function ConsensusPanel({ event }: ConsensusPanelProps) {
         <div>
           <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Priority Actions</p>
           <div className="space-y-2">
-            {actions.slice(0, 6).map((action, i) => {
+            {actions.slice(0, 10).map((action, i) => {
               const urgency = String(action.urgency ?? "THIS_QUARTER");
               const urgencyStyle = URGENCY_STYLE[urgency] ?? URGENCY_STYLE.THIS_QUARTER;
               const icon = DOMAIN_ICON[String(action.domain ?? "")] ?? "•";
@@ -139,6 +170,28 @@ export default function ConsensusPanel({ event }: ConsensusPanelProps) {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Holding Recommendations */}
+      {holdingRecs && holdingRecs.length > 0 && (
+        <div>
+          <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Stock Actions</p>
+          <div className="space-y-2">
+            {holdingRecs.map((rec, i) => (
+              <div key={i} className="border border-gray-800 rounded p-2">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs font-bold text-cyan-400">{rec.symbol}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                    rec.action === "BUY" || rec.action === "ADD" ? "bg-green-900/50 text-green-400" :
+                    rec.action === "SELL" || rec.action === "TRIM" ? "bg-red-900/50 text-red-400" :
+                    "bg-gray-800 text-gray-400"
+                  }`}>{rec.action}</span>
+                </div>
+                <p className="text-xs text-gray-500 leading-snug">{rec.reasoning}</p>
+              </div>
+            ))}
           </div>
         </div>
       )}

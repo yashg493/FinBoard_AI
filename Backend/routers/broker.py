@@ -145,9 +145,9 @@ async def get_indstocks_login_url():
         "login_url": broker.get_login_url(),
         "auth_type": "token",
         "instructions": [
-            "1. Open the login_url in your browser",
-            "2. Log in to INDstocks",
-            "3. Click 'Generate Token'",
+            "1. Log in to your INDstocks account first (e.g. at indstocks.com)",
+            "2. Open the login_url in your browser",
+            "3. Click 'Generate Token' or 'Get Started'",
             "4. Copy the token and paste it in FinBoard",
         ],
     }

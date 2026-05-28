@@ -36,16 +36,25 @@ class TaxAgent(BaseAgent):
             system_prompt=TAX_SYSTEM_PROMPT,
         )
 
-    def build_prompt(self, user_profile: dict, macro_data: dict, context: dict) -> str:
-        income = user_profile.get("monthly_income", 0) * 12
+    def build_prompt(self, user_profile: dict, macro_data: dict, context: dict, meeting_transcript: str = None) -> str:
         tax_regime = user_profile.get("tax_regime", "new")
+        months_to_fy_end = user_profile.get("months_to_fy_end", 12)
+        monthly_income = user_profile.get("monthly_income", 0)
+        annual_income = monthly_income * 12
         portfolio = user_profile.get("portfolio", {})
         unrealized_gains = portfolio.get("unrealized_gains", {})
         deductions_used = user_profile.get("deductions_used", {})
-        fy_end_months = user_profile.get("months_to_fy_end", 3)
 
         return f"""
-Analyze the user's tax situation and provide optimization recommendations.
+You are the Tax Optimization Agent in an AI Financial Board meeting. Your role is to provide highly analytical, data-backed tax strategies based on Indian Tax Laws.
+
+CRITICAL INSTRUCTIONS:
+1. YOU MUST USE SPECIFIC NUMBERS. Calculate exact INR tax liabilities, exact savings from Sections like 80C/80CCD(1B), and exact capital gains tax (LTCG/STCG).
+2. USE SPECIFIC TAX STRATEGIES: Reference Tax-Loss Harvesting, Income Splitting, and optimal Asset Location.
+3. ENGAGE WITH THE TRANSCRIPT: If there is an ongoing meeting transcript, you MUST directly address points made by other agents. If the Investment Agent suggests selling a stock, you MUST calculate the exact tax implication of that sale.
+
+MEETING TRANSCRIPT SO FAR:
+{meeting_transcript or "Meeting has just started. You are the first to speak."}
 
 MACROECONOMIC CONTEXT:
 - Current Nifty 50 Level: {macro_data.get('markets', {}).get('nifty50', 'N/A')}
@@ -65,7 +74,7 @@ DEDUCTIONS UTILIZED (FY so far):
 PORTFOLIO UNREALIZED GAINS/LOSSES:
 {unrealized_gains}
 
-HOLDINGS DETAIL:
+PORTFOLIO HOLDINGS (Enriched with Live Prices and P&L):
 {portfolio.get('holdings', [])}
 
 CONTEXT / TRIGGER: {context}
@@ -79,7 +88,7 @@ Provide comprehensive tax optimization in EXACT JSON format:
     "reasoning": "<why switch or stay>"
   }},
   "recommendation": "<1-2 sentence tax executive summary>",
-  "reasoning": "<detailed tax analysis>",
+  "reasoning": "<Deep analytical reasoning. MUST include exact INR tax calculations and specific section references. MUST address points from the Meeting Transcript.>",
   "confidence": <0.0-1.0>,
   "deduction_optimization": {{
     "80C": {{

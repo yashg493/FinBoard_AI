@@ -49,12 +49,12 @@ const BROKER_UI: Record<string, BrokerUIConfig> = {
     badge:      "Free",
     badgeColor: "text-green-400 border-green-800 bg-green-950/20",
     tokenHelp: {
-      label: "indstocks.com/app/api-trading",
+      label: "INDstocks API Dashboard (Log in first)",
       url:   "https://indstocks.com/app/api-trading",
       steps: [
-        "Open indstocks.com/app/api-trading",
-        "Log in to your INDstocks account",
-        'Click "Generate Token"',
+        "Log in to your account at indstocks.com (required first to prevent redirection)",
+        "Open indstocks.com/app/api-trading (or click the link below)",
+        'Click "Generate Token" or "Get Started with INDstocks APIs"',
         "Copy and paste the token below",
       ],
     },

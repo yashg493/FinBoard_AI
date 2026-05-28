@@ -101,9 +101,13 @@ Respond ONLY with a JSON object:
         # - FRED API: https://fred.stlouisfed.org/
         # - NSE: https://www.nseindia.com/api/
         # - Alpha Vantage / Twelve Data for market prices
-        return {
+        import time
+        from datetime import datetime
+
+        # Default fallback data
+        macro = {
             "country": "India",
-            "timestamp": "2025-01-15T10:30:00Z",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
             "inflation": {
                 "cpi_yoy": 5.48,
                 "core_inflation": 3.65,
@@ -144,6 +148,51 @@ Respond ONLY with a JSON object:
                 "global_recession_probability": 0.25,
             },
         }
+
+        # Attempt to fetch live market data via yfinance
+        def _fetch_live():
+            import yfinance as yf
+            try:
+                # Nifty 50
+                nifty = yf.Ticker("^NSEI").fast_info
+                if hasattr(nifty, "last_price") and nifty.last_price:
+                    macro["markets"]["nifty50"] = round(nifty.last_price, 2)
+                    if hasattr(nifty, "previous_close") and nifty.previous_close:
+                        macro["markets"]["nifty_change_1m"] = round((nifty.last_price - nifty.previous_close) / nifty.previous_close * 100, 2) # Approximating 1m change with daily change for demo
+            except Exception:
+                pass
+            
+            try:
+                # Sensex
+                sensex = yf.Ticker("^BSESN").fast_info
+                if hasattr(sensex, "last_price") and sensex.last_price:
+                    macro["markets"]["sensex"] = round(sensex.last_price, 2)
+            except Exception:
+                pass
+                
+            try:
+                # India VIX
+                vix = yf.Ticker("^INDIAVIX").fast_info
+                if hasattr(vix, "last_price") and vix.last_price:
+                    macro["markets"]["vix_india"] = round(vix.last_price, 2)
+            except Exception:
+                pass
+                
+            try:
+                # USD/INR
+                usdinr = yf.Ticker("INR=X").fast_info
+                if hasattr(usdinr, "last_price") and usdinr.last_price:
+                    macro["currency"]["usd_inr"] = round(usdinr.last_price, 2)
+            except Exception:
+                pass
+
+        try:
+            await asyncio.get_event_loop().run_in_executor(None, _fetch_live)
+        except Exception as e:
+            import logging
+            logging.getLogger("boardroom-ai").warning(f"Failed to fetch live macro data: {e}")
+
+        return macro
 
     async def watch_for_triggers(self) -> AsyncGenerator[dict, None]:
         """

@@ -30,13 +30,23 @@ class InvestmentAgent(BaseAgent):
             system_prompt=INVESTMENT_SYSTEM_PROMPT,
         )
 
-    def build_prompt(self, user_profile: dict, macro_data: dict, context: dict) -> str:
+    def build_prompt(self, user_profile: dict, macro_data: dict, context: dict, meeting_transcript: str = None) -> str:
         portfolio = user_profile.get("portfolio", {})
         current_allocation = portfolio.get("allocation", {})
         sip_amount = user_profile.get("sip_monthly", 0)
         risk_tolerance = user_profile.get("risk_tolerance", "moderate")
 
         return f"""
+You are the Investment Agent in an AI Financial Board meeting. Your role is to provide highly analytical, data-backed portfolio recommendations.
+
+CRITICAL INSTRUCTIONS:
+1. YOU MUST USE SPECIFIC NUMBERS. Calculate exact INR amounts for rebalancing and exact % shifts.
+2. USE FINANCIAL FRAMEWORKS: Reference specific strategies (e.g., Core-Satellite, Factor Investing, Value vs Growth rotation).
+3. ENGAGE WITH THE TRANSCRIPT: If there is an ongoing meeting transcript, you MUST directly address points made by other agents. Agree, disagree, or compromise using data to back your stance.
+
+MEETING TRANSCRIPT SO FAR:
+{meeting_transcript or "Meeting has just started. You are the first to speak."}
+
 Analyze the current macroeconomic environment and provide investment portfolio recommendations.
 
 CURRENT MACROECONOMIC CONDITIONS:
@@ -59,6 +69,9 @@ USER INVESTMENT PROFILE:
 CURRENT ALLOCATION:
 {current_allocation}
 
+PORTFOLIO HOLDINGS (Enriched with Live Prices):
+{portfolio.get('holdings', [])}
+
 CONTEXT / TRIGGER: {context}
 
 Provide investment recommendations in this EXACT JSON format:
@@ -66,7 +79,7 @@ Provide investment recommendations in this EXACT JSON format:
   "market_regime": "<BULL|BEAR|SIDEWAYS|VOLATILE>",
   "positioning": "<AGGRESSIVE|MODERATE|DEFENSIVE|CASH_HEAVY>",
   "recommendation": "<1-2 sentence executive summary>",
-  "reasoning": "<detailed analysis referencing macro data>",
+  "reasoning": "<Deep analytical reasoning. MUST include statistical framework and references to macro/portfolio data. MUST address points from the Meeting Transcript.>",
   "confidence": <0.0-1.0>,
   "proposed_allocation": {{
     "large_cap_equity": <percent>,
@@ -94,6 +107,15 @@ Provide investment recommendations in this EXACT JSON format:
       {{"fund_type": "<type>", "current": <amount>, "proposed": <amount>, "reason": "<why>"}}
     ]
   }},
+  "stock_level_recommendations": [
+    {{
+      "symbol": "<symbol>",
+      "current_value": <INR>,
+      "action": "<BUY|SELL|HOLD|TRIM|ADD>",
+      "reasoning": "<why, including sector outlook and macro impact>"
+    }}
+  ],
+  "concentration_risk_analysis": "<analysis of single-stock or sector concentration risks based on holdings>",
   "risk_flags": ["<flag1>", "<flag2>"],
   "priority_actions": [
     {{"action": "<action>", "urgency": "<HIGH|MED|LOW>", "impact": "<expected impact>"}}
@@ -124,6 +146,15 @@ Provide investment recommendations in this EXACT JSON format:
                 "action": action.get("action"),
                 "urgency": action.get("urgency"),
                 "impact": action.get("impact"),
+            })
+
+        for rec in data.get("stock_level_recommendations", []):
+            all_actions.append({
+                "type": "STOCK_ACTION",
+                "symbol": rec.get("symbol"),
+                "action": rec.get("action"),
+                "reasoning": rec.get("reasoning"),
+                "current_value": rec.get("current_value"),
             })
 
         return AgentOutput(

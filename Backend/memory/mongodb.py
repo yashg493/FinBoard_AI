@@ -89,7 +89,12 @@ class MongoMemory:
                     "total_stcg": 45000,
                     "total_loss": 30000,
                 },
-                "holdings": [],
+                "holdings": [
+                    {"symbol": "RELIANCE", "quantity": 150, "avg_price": 2450.50, "current_price": 2980.00},
+                    {"symbol": "TCS", "quantity": 100, "avg_price": 3850.00, "current_price": 3950.00},
+                    {"symbol": "HDFCBANK", "quantity": 300, "avg_price": 1650.00, "current_price": 1420.00},
+                    {"symbol": "PAYTM", "quantity": 500, "avg_price": 950.00, "current_price": 420.00}
+                ],
             },
             "emis": [
                 {"type": "Home Loan", "amount": 25000, "remaining_months": 180, "rate_pct": 8.5},
@@ -124,6 +129,56 @@ class MongoMemory:
             {"meeting_id": meeting_id}, {"_id": 0}
         )
         return doc
+
+    async def get_recent_meetings_summary(self, user_id: str, limit: int = 3) -> list[dict]:
+        """
+        Return compact summaries of recent board meetings for prompt injection.
+        Includes: meeting_id, timestamp, board verdict, consensus actions, and macro snapshot.
+        """
+        cursor = self.db.board_meetings.find(
+            {"user_id": user_id},
+            {
+                "_id": 0,
+                "meeting_id": 1,
+                "timestamp": 1,
+                "agent_outputs.orchestrator.recommendation": 1,
+                "agent_outputs.orchestrator.reasoning": 1,
+                "agent_outputs.orchestrator.actions": 1,
+                "agent_outputs.orchestrator.risk_flags": 1,
+                "agent_outputs.investment.recommendation": 1,
+                "agent_outputs.risk.recommendation": 1,
+                "agent_outputs.tax.recommendation": 1,
+                "macro_snapshot.markets.nifty50": 1,
+                "macro_snapshot.inflation.cpi_yoy": 1,
+                "macro_snapshot.interest_rates.rbi_repo_rate": 1,
+            },
+        ).sort("timestamp", DESCENDING).limit(limit)
+        meetings = await cursor.to_list(length=limit)
+
+        summaries = []
+        for m in meetings:
+            orch = m.get("agent_outputs", {}).get("orchestrator", {})
+            summaries.append({
+                "meeting_id": m.get("meeting_id"),
+                "timestamp": m.get("timestamp"),
+                "board_verdict": orch.get("recommendation", ""),
+                "narrative": orch.get("reasoning", ""),
+                "actions_decided": [
+                    a.get("action", "") for a in orch.get("actions", [])[:5]
+                ],
+                "risk_flags": orch.get("risk_flags", []),
+                "agent_summaries": {
+                    "investment": m.get("agent_outputs", {}).get("investment", {}).get("recommendation", ""),
+                    "risk": m.get("agent_outputs", {}).get("risk", {}).get("recommendation", ""),
+                    "tax": m.get("agent_outputs", {}).get("tax", {}).get("recommendation", ""),
+                },
+                "macro_at_time": {
+                    "nifty50": m.get("macro_snapshot", {}).get("markets", {}).get("nifty50"),
+                    "cpi": m.get("macro_snapshot", {}).get("inflation", {}).get("cpi_yoy"),
+                    "repo_rate": m.get("macro_snapshot", {}).get("interest_rates", {}).get("rbi_repo_rate"),
+                },
+            })
+        return summaries
 
     # ── Macro Events ──
 

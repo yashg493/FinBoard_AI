@@ -8,16 +8,13 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - MONGODB_URI=${MONGODB_URI:-mongodb://mongo:27017/boardroom-ai}
+      - MONGODB_URI=mongodb://mongo:27017/boardroom-ai
       - GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json
       - VERTEX_PROJECT=finboard-ai
       - VERTEX_LOCATION=us-central1
-      - ARIZE_SPACE_KEY=${ARIZE_SPACE_KEY}
-      - ARIZE_API_KEY=${ARIZE_API_KEY}
-      - PHOENIX_ENDPOINT=http://phoenix:6006/v1/traces
     volumes:
+      # Mounts your local Windows credentials directory into the container
       - C:\Users\yashg\AppData\Roaming\gcloud:/root/.config/gcloud:ro
-      - ./Backend:/app
     depends_on:
       - mongo
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload

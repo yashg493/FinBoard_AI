@@ -55,39 +55,24 @@ class OrchestratorAgent(BaseAgent):
         self.sentinel = SentinelAgent()
 
     def build_prompt(self, user_profile: dict, macro_data: dict, context: dict) -> str:
-        investment_output = context.get("investment_output", {})
-        risk_output = context.get("risk_output", {})
-        tax_output = context.get("tax_output", {})
+        meeting_transcript = context.get("meeting_transcript", "No transcript available.")
         sentinel_output = context.get("sentinel_output", {})
 
         return f"""
-You are chairing the AI Financial Board meeting. Synthesize the specialist agent outputs below.
+You are chairing the AI Financial Board meeting. Synthesize the FULL MEETING TRANSCRIPT into a unified board decision.
+
+MEETING TRANSCRIPT:
+{meeting_transcript}
+
+PRIOR BOARD DECISIONS:
+{context.get('prior_decisions', 'None')}
 
 MACROECONOMIC TRIGGER:
 {sentinel_output}
 
-INVESTMENT AGENT OUTPUT:
-- Recommendation: {investment_output.get('recommendation', 'N/A')}
-- Positioning: See actions
-- Confidence: {investment_output.get('confidence', 'N/A')}
-- Key Actions: {[a for a in investment_output.get('actions', []) if a.get('type') == 'PRIORITY_ACTION']}
-- Risk Flags: {investment_output.get('risk_flags', [])}
-
-RISK AGENT OUTPUT:
-- Recommendation: {risk_output.get('recommendation', 'N/A')}
-- Confidence: {risk_output.get('confidence', 'N/A')}
-- Key Actions: {[a for a in risk_output.get('actions', []) if a.get('type') == 'RISK_ACTION']}
-- Risk Flags: {risk_output.get('risk_flags', [])}
-
-TAX AGENT OUTPUT:
-- Recommendation: {tax_output.get('recommendation', 'N/A')}
-- Confidence: {tax_output.get('confidence', 'N/A')}
-- Key Actions: {[a for a in tax_output.get('actions', []) if a.get('type') == 'TAX_ACTION']}
-- Risk Flags: {tax_output.get('risk_flags', [])}
-
-Synthesize these into a unified board decision in EXACT JSON format:
+Synthesize the board discussion into a unified board decision in EXACT JSON format:
 {{
-  "board_verdict": "<1 sentence decisive financial governance statement>",
+  "board_verdict": "<detailed multi-paragraph decisive financial governance statement>",
   "financial_health_score": <1-100>,
   "governance_mode": "<ADVISORY|COPILOT|AUTONOMOUS>",
   "disagreement_score": <0-10>,
@@ -106,12 +91,24 @@ Synthesize these into a unified board decision in EXACT JSON format:
       "action": "<specific action>",
       "domain": "<INVESTMENT|RISK|TAX|GOVERNANCE>",
       "urgency": "<IMMEDIATE|THIS_WEEK|THIS_MONTH|THIS_QUARTER>",
-      "estimated_impact": "<financial impact>",
+      "estimated_impact": "<financial impact in INR if applicable>",
       "responsible_agent": "<which agent owns this>",
       "requires_user_approval": <true/false>
     }}
   ],
-  "narrative": "<3-4 sentence board meeting narrative explaining the overall situation and decision>",
+  "holding_level_recommendations": [
+    {{
+      "symbol": "<symbol>",
+      "action": "<action>",
+      "reasoning": "<reasoning>"
+    }}
+  ],
+  "per_agent_summary": {{
+    "investment": "<summary>",
+    "risk": "<summary>",
+    "tax": "<summary>"
+  }},
+  "narrative": "<Detailed multi-paragraph board meeting narrative explaining the overall situation and decision, incorporating the reasoning of the agents>",
   "macroeconomic_outlook": "<brief macro regime description>",
   "next_review_trigger": "<what event or timeframe should trigger next board meeting>",
   "debate_summary": "<brief summary of agent debates and key points of agreement/disagreement>"
@@ -161,54 +158,58 @@ Synthesize these into a unified board decision in EXACT JSON format:
             yield self._event("agent_output", "Sentinel Agent", sentinel_output.recommendation,
                              data=sentinel_output.to_dict(), icon="sentinel")
 
-            # ── Phase 2: Parallel Agent Analysis ──
-            yield self._event("phase_start", "Board", "Parallel analysis initiated — agents deliberating...")
+            meeting_transcript = f"CHAIRPERSON (Orchestrator): The meeting has started. Sentinel reports the following macroeconomic conditions: {sentinel_output.recommendation}\n\n"
 
-            investment_task = asyncio.create_task(
-                self.investment_agent.analyze(user_profile, macro_data, context)
-            )
-            risk_task = asyncio.create_task(
-                self.risk_agent.analyze(user_profile, macro_data, context)
-            )
-            tax_task = asyncio.create_task(
-                self.tax_agent.analyze(user_profile, macro_data, context)
-            )
+            # ── Phase 2: Sequential Round Table ──
+            yield self._event("phase_start", "Board", "Sequential analysis initiated — agents deliberating in turn...")
 
-            # Stream thinking events while parallel agents run
-            for agent_name in ["Investment Agent", "Risk Agent", "Tax Agent"]:
-                yield self._event("agent_thinking", agent_name, f"Analyzing portfolio and {agent_name.lower().replace(' agent', '')} implications...")
-                await asyncio.sleep(0.5)
-
-            # Await all parallel results
-            investment_output, risk_output, tax_output = await asyncio.gather(
-                investment_task, risk_task, tax_task
-            )
-
+            # 1. Investment Agent
+            yield self._event("agent_thinking", "Investment Agent", "Analyzing portfolio and generating data-backed strategy...")
+            investment_output = await self.investment_agent.analyze(user_profile, macro_data, context, meeting_transcript)
+            transcript_entry = f"INVESTMENT AGENT: {investment_output.recommendation}\nReasoning: {investment_output.reasoning}\n\n"
+            meeting_transcript += transcript_entry
             yield self._event("agent_output", "Investment Agent", investment_output.recommendation,
                              data=investment_output.to_dict(), icon="investment")
+
+            # 2. Risk Agent
+            yield self._event("agent_thinking", "Risk Agent", "Evaluating risks and reviewing Investment strategy...")
+            risk_output = await self.risk_agent.analyze(user_profile, macro_data, context, meeting_transcript)
+            transcript_entry = f"RISK AGENT: {risk_output.recommendation}\nReasoning: {risk_output.reasoning}\n\n"
+            meeting_transcript += transcript_entry
             yield self._event("agent_output", "Risk Agent", risk_output.recommendation,
                              data=risk_output.to_dict(), icon="risk")
+
+            # 3. Tax Agent
+            yield self._event("agent_thinking", "Tax Agent", "Optimizing taxes and reviewing previous strategies...")
+            tax_output = await self.tax_agent.analyze(user_profile, macro_data, context, meeting_transcript)
+            transcript_entry = f"TAX AGENT: {tax_output.recommendation}\nReasoning: {tax_output.reasoning}\n\n"
+            meeting_transcript += transcript_entry
             yield self._event("agent_output", "Tax Agent", tax_output.recommendation,
                              data=tax_output.to_dict(), icon="tax")
 
-            # ── Phase 3: Debate Loop ──
-            yield self._event("debate_start", "Board", "Agents debating and challenging recommendations...")
+            # ── Phase 3: Debate & Rebuttal Loop ──
+            yield self._event("debate_start", "Board", "Orchestrator moderating debate...")
+
+            conflicts = await self._detect_conflicts_llm(meeting_transcript)
+            
+            # The conflicts are currently generated as statements from the agents. We will stream them and append to transcript.
+            for conflict in conflicts:
+                agent_name = conflict["agent"]
+                message = conflict["message"]
+                yield self._event("agent_debate", agent_name, message, debate=True)
+                meeting_transcript += f"{agent_name.upper()}: {message}\n\n"
+                await asyncio.sleep(0.3)
 
             debate_context = {
                 "sentinel_output": sentinel_output.to_dict(),
                 "investment_output": investment_output.to_dict(),
                 "risk_output": risk_output.to_dict(),
                 "tax_output": tax_output.to_dict(),
+                "meeting_transcript": meeting_transcript
             }
 
-            # Check for obvious conflicts and yield debate events
-            conflicts = self._detect_conflicts(investment_output, risk_output, tax_output)
-            for conflict in conflicts:
-                yield self._event("agent_debate", conflict["agent"], conflict["message"], debate=True)
-                await asyncio.sleep(0.3)
-
             # ── Phase 4: Orchestrator Consensus ──
-            yield self._event("agent_thinking", "Orchestrator", "Synthesizing board consensus...")
+            yield self._event("agent_thinking", "Orchestrator", "Synthesizing board consensus from the full transcript...")
             final_output = await self.analyze(user_profile, macro_data, debate_context)
 
             yield self._event("consensus", "Orchestrator", final_output.recommendation,
@@ -227,6 +228,7 @@ Synthesize these into a unified board decision in EXACT JSON format:
                     "tax": tax_output.to_dict(),
                     "orchestrator": final_output.to_dict(),
                 },
+                "meeting_transcript": meeting_transcript,
                 "consensus_actions": final_output.actions,
             })
 
@@ -379,35 +381,40 @@ Synthesize these into a unified board decision in EXACT JSON format:
 
         return scenarios["india_recession"]
 
-    def _detect_conflicts(
+    async def _detect_conflicts_llm(
         self,
-        investment: AgentOutput,
-        risk: AgentOutput,
-        tax: AgentOutput,
+        meeting_transcript: str,
     ) -> list[dict]:
-        """Quick heuristic conflict detection between agents."""
-        conflicts = []
+        """LLM-powered conflict detection between agents."""
+        prompt = f"""
+        Analyze the following meeting transcript of three financial agents (Investment, Risk, Tax).
+        Identify any disagreements or conflicts in their recommendations or reasoning.
 
-        inv_flags = set(investment.risk_flags)
-        risk_flags = set(risk.risk_flags)
+        MEETING TRANSCRIPT:
+        {meeting_transcript}
 
-        if "HIGH_MARKET_RISK" in inv_flags and "INSUFFICIENT_EMERGENCY_FUND" in risk_flags:
-            conflicts.append({
-                "agent": "Investment Agent",
-                "message": "I recommend maintaining equity exposure, but Risk Agent flags insufficient emergency buffer.",
-            })
-            conflicts.append({
-                "agent": "Risk Agent",
-                "message": "We must build emergency reserves before deploying more capital into volatile markets.",
-            })
-
-        if "TAX_OPTIMIZATION_OPPORTUNITY" in set(tax.risk_flags):
-            conflicts.append({
-                "agent": "Tax Agent",
-                "message": "Timing matters here — liquidation now triggers STCG at 20%. Hold for LTCG qualification.",
-            })
-
-        return conflicts
+        Identify up to 3 key conflicts or points of tension. If no conflicts exist, return an empty array.
+        Respond ONLY in EXACT JSON format:
+        {{
+            "conflicts": [
+                {{
+                    "agent": "<Agent Name that raised the point>",
+                    "message": "<A 1-2 sentence first-person statement from this agent challenging another agent's point>"
+                }}
+            ]
+        }}
+        """
+        try:
+            from agents.base_agent import SAFETY_SETTINGS
+            response = await self.model.generate_content_async(
+                prompt,
+                generation_config=self.generation_config,
+                safety_settings=SAFETY_SETTINGS,
+            )
+            data = self._safe_parse_json(response.text)
+            return data.get("conflicts", [])
+        except Exception as e:
+            return []
 
     def _event(
         self,

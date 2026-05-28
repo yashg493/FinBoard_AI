@@ -22,6 +22,7 @@ from routers import portfolio, simulation, history
 from routers import broker as broker_router
 from utils.connection_manager import ConnectionManager
 from utils.observability import setup_tracing
+from utils.market_data import enrich_holdings_with_prices
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("boardroom-ai")
@@ -141,6 +142,15 @@ async def run_board_meeting(user_id: str, context: dict, websocket: WebSocket):
     """Orchestrate a full board meeting and stream events to frontend."""
     user_profile = await memory.get_user_profile(user_id)
     macro_data = await sentinel.fetch_macro_data()
+
+    # Enrich holdings with live prices before the meeting starts
+    if user_profile.get("portfolio") and user_profile["portfolio"].get("holdings"):
+        enriched = await enrich_holdings_with_prices(user_profile["portfolio"]["holdings"])
+        user_profile["portfolio"]["holdings"] = enriched
+
+    # Fetch prior meetings for context
+    prior_meetings = await memory.get_recent_meetings_summary(user_id, limit=2)
+    context["prior_decisions"] = prior_meetings
 
     # Cache macro data in session state for Q&A use
     _session_state[user_id]["macro_data"] = macro_data

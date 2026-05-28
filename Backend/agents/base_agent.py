@@ -138,7 +138,7 @@ class BaseAgent(ABC):
     - Arize Phoenix OpenTelemetry tracing (Phase 3 compliance)
     """
 
-    def __init__(self, agent_name: str, system_prompt: str):
+    def __init__(self, agent_name: str, system_prompt: str, thinking_budget: int = 4096, max_output_tokens: int = 8192):
         self.agent_name = agent_name
         json_safety_instruction = (
             "\n\nCRITICAL: You must return valid JSON only matching the schema exactly. "
@@ -155,13 +155,13 @@ class BaseAgent(ABC):
         self.generation_config = {
             "temperature": 0.3,
             "top_p": 0.9,
-            "max_output_tokens": 4096,
+            "max_output_tokens": max_output_tokens,
             "response_mime_type": "application/json",
-            "thinking_config": {"thinking_budget": 0},
+            "thinking_config": {"thinking_budget": thinking_budget},
         }
 
     @abstractmethod
-    def build_prompt(self, user_profile: dict, macro_data: dict, context: dict) -> str:
+    def build_prompt(self, user_profile: dict, macro_data: dict, context: dict, meeting_transcript: str = None) -> str:
         """Build the agent-specific prompt."""
         pass
 
@@ -175,10 +175,11 @@ class BaseAgent(ABC):
         user_profile: dict,
         macro_data: dict,
         context: dict = None,
+        meeting_transcript: str = None,
     ) -> AgentOutput:
         """Main analysis entry point — calls Gemini with safety settings and returns structured output."""
         context = context or {}
-        prompt = self.build_prompt(user_profile, macro_data, context)
+        prompt = self.build_prompt(user_profile, macro_data, context, meeting_transcript)
 
         # Lazy imports to prevent circular imports
         from utils.observability import get_tracer

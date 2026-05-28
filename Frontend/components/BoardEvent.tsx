@@ -1,5 +1,5 @@
-// components/BoardEvent.tsx
 import { BoardEventData } from "../pages/boardroom";
+import { useState } from "react";
 
 const AGENT_COLORS: Record<string, string> = {
   "Sentinel Agent": "text-blue-400 border-blue-800",
@@ -32,6 +32,7 @@ export default function BoardEvent({ event }: { event: BoardEventData }) {
   const isUserMsg = event.type === "user_input";
   const isUserResponse = event.type === "user_response";
   const isConstraint = event.type === "constraint_acknowledged";
+  const [expanded, setExpanded] = useState(false);
 
   if (isPhase) {
     return (
@@ -153,6 +154,43 @@ export default function BoardEvent({ event }: { event: BoardEventData }) {
         <p className={`text-sm leading-relaxed ${isThinking ? "text-gray-600 italic" : "text-gray-200"}`}>
           {event.message}
         </p>
+
+        {!isThinking && !isDebate && event.data?.reasoning && (
+          <div className="mt-2">
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors"
+            >
+              {expanded ? "▼ Hide Analysis" : "▶ Show Full Analysis"}
+            </button>
+            {expanded && (
+              <div className="mt-2 text-sm text-gray-300 bg-gray-900/50 p-3 rounded border border-gray-800 whitespace-pre-wrap">
+                {String(event.data.reasoning)}
+                
+                {event.data.actions && (event.data.actions as any[]).length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-gray-800">
+                    <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Detailed Actions</p>
+                    <div className="space-y-2">
+                      {(event.data.actions as any[]).map((action, i) => (
+                        <div key={i} className="text-xs border-l-2 border-gray-600 pl-2">
+                          {action.type === "STOCK_ACTION" ? (
+                            <span><strong className="text-cyan-400">{action.action} {action.symbol}</strong>: {action.reasoning}</span>
+                          ) : action.type === "HARVESTING_OPPORTUNITY" ? (
+                            <span><strong className="text-purple-400">{action.action} {action.holding}</strong>: {action.reasoning} (Impact: ₹{action.tax_impact})</span>
+                          ) : action.type === "ALLOCATION_CHANGE" ? (
+                            <span><strong className="text-green-400">{action.action} {action.asset}</strong> ({action.current_pct}% → {action.proposed_pct}%): {action.rationale}</span>
+                          ) : (
+                            <span><strong className="text-amber-400">{action.action}</strong>: {action.impact || action.rationale || "Action required"}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         {event.data?.confidence !== undefined && (
           <div className="mt-1 flex items-center gap-2">
             <div className="h-0.5 flex-1 bg-gray-800 rounded">

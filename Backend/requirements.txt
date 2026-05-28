@@ -11,3 +11,4 @@ opentelemetry-exporter-otlp-proto-http>=1.19.0
 python-dotenv>=1.0.0
 yfinance>=0.2.40
 kiteconnect>=5.0.1
+python-multipart>=0.0.18
